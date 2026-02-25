@@ -12,11 +12,14 @@ import (
 )
 
 type MinioConfig struct {
-	Endpoint  string
-	AccessKey string
-	SecretKey string
-	UseSSL    bool
-	Bucket    string
+	Provider         string
+	Endpoint         string
+	AccessKey        string
+	SecretKey        string
+	UseSSL           bool
+	Bucket           string
+	Region           string
+	AutoCreateBucket bool
 }
 
 type MinioClient struct {
@@ -33,6 +36,7 @@ func NewMinio(ctx context.Context, cfg MinioConfig) (*MinioClient, error) {
 	client, err := minio.New(cfg.Endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
 		Secure: cfg.UseSSL,
+		Region: cfg.Region,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("init minio: %w", err)
@@ -44,6 +48,9 @@ func NewMinio(ctx context.Context, cfg MinioConfig) (*MinioClient, error) {
 		return nil, fmt.Errorf("check bucket: %w", err)
 	}
 	if !exists {
+		if !cfg.AutoCreateBucket {
+			return nil, fmt.Errorf("bucket %q does not exist", cfg.Bucket)
+		}
 		if err := client.MakeBucket(ctx, cfg.Bucket, minio.MakeBucketOptions{}); err != nil {
 			return nil, fmt.Errorf("create bucket: %w", err)
 		}
