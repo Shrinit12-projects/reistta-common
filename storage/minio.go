@@ -70,3 +70,12 @@ func (m *MinioClient) PresignPut(ctx context.Context, objectKey string, expiry t
 	}
 	return url.String(), nil
 }
+
+func (m *MinioClient) PresignGet(ctx context.Context, objectKey string, expiry time.Duration) (string, error) {
+	reqParams := make(url.Values)
+	url, err := m.Client.PresignedGetObject(ctx, m.Bucket, objectKey, expiry, reqParams)
+	if err != nil {
+		return "", err
+	}
+	return url.String(), nil
+}
