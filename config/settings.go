@@ -12,34 +12,34 @@ import (
 )
 
 type Settings struct {
-	AppEnv             string
-	IsProduction       bool
-	DatabaseURL        string
-	RedisURL           string
-	PGMaxConns         int32
-	PGMinConns         int32
-	PGMaxConnIdleTime  time.Duration
+	AppEnv              string
+	IsProduction        bool
+	DatabaseURL         string
+	RedisURL            string
+	PGMaxConns          int32
+	PGMinConns          int32
+	PGMaxConnIdleTime   time.Duration
 	PGHealthcheckPeriod time.Duration
-	RedisPoolSize      int
-	RedisMinIdleConns  int
-	SessionSecret      string
-	AccessTokenTTL     time.Duration
-	RefreshTokenTTL    time.Duration
-	LoginMaxAttempts   int
-	LoginLockoutTTL    time.Duration
-	RateLimitRPS       float64
-	RateLimitBurst     int
-	S3Region           string
-	S3Bucket           string
-	S3Endpoint         string
-	S3AccessKeyID      string
-	S3SecretAccessKey  string
-	S3UseSSL           bool
-	MinioEndpoint      string
-	MinioAccessKey     string
-	MinioSecretKey     string
-	MinioBucket        string
-	MinioUseSSL        bool
+	RedisPoolSize       int
+	RedisMinIdleConns   int
+	SessionSecret       string
+	AccessTokenTTL      time.Duration
+	RefreshTokenTTL     time.Duration
+	LoginMaxAttempts    int
+	LoginLockoutTTL     time.Duration
+	RateLimitRPS        float64
+	RateLimitBurst      int
+	S3Region            string
+	S3Bucket            string
+	S3Endpoint          string
+	S3AccessKeyID       string
+	S3SecretAccessKey   string
+	S3UseSSL            bool
+	MinioEndpoint       string
+	MinioAccessKey      string
+	MinioSecretKey      string
+	MinioBucket         string
+	MinioUseSSL         bool
 }
 
 func LoadSettings() (Settings, error) {
@@ -85,33 +85,60 @@ func LoadSettings() (Settings, error) {
 		minioUseSSL       bool
 	)
 
-	if isProduction {
-		s3Region = mustString("S3_REGION", &missing)
-		s3Bucket = mustString("S3_BUCKET", &missing)
-		s3AccessKeyID = mustString("S3_ACCESS_KEY_ID", &missing)
-		s3SecretAccessKey = mustString("S3_SECRET_ACCESS_KEY", &missing)
-		s3Endpoint = strings.TrimSpace(os.Getenv("S3_ENDPOINT"))
-		if s3Endpoint == "" {
-			s3Endpoint = fmt.Sprintf("s3.%s.amazonaws.com", s3Region)
-		}
-		if val, ok := os.LookupEnv("S3_USE_SSL"); ok && strings.TrimSpace(val) != "" {
-			s3UseSSL = mustBool("S3_USE_SSL", &missing)
-		} else {
+	// Stage-agnostic storage selection:
+	// prefer S3 when complete S3 config is present, otherwise fallback to MinIO.
+	s3Region = strings.TrimSpace(os.Getenv("S3_REGION"))
+	s3Bucket = strings.TrimSpace(os.Getenv("S3_BUCKET"))
+	s3AccessKeyID = strings.TrimSpace(os.Getenv("S3_ACCESS_KEY_ID"))
+	s3SecretAccessKey = strings.TrimSpace(os.Getenv("S3_SECRET_ACCESS_KEY"))
+	s3Endpoint = strings.TrimSpace(os.Getenv("S3_ENDPOINT"))
+	if s3Endpoint == "" && s3Region != "" {
+		s3Endpoint = fmt.Sprintf("s3.%s.amazonaws.com", s3Region)
+	}
+	s3UseSSL = true
+	if val, ok := os.LookupEnv("S3_USE_SSL"); ok && strings.TrimSpace(val) != "" {
+		switch strings.ToLower(strings.TrimSpace(val)) {
+		case "true", "1", "yes":
 			s3UseSSL = true
+		case "false", "0", "no":
+			s3UseSSL = false
+		default:
+			missing = append(missing, "S3_USE_SSL")
 		}
+	}
 
+	minioEndpoint = strings.TrimSpace(os.Getenv("MINIO_ENDPOINT"))
+	minioAccessKey = strings.TrimSpace(os.Getenv("MINIO_ACCESS_KEY"))
+	minioSecretKey = strings.TrimSpace(os.Getenv("MINIO_SECRET_KEY"))
+	minioBucket = strings.TrimSpace(os.Getenv("MINIO_BUCKET"))
+	if val, ok := os.LookupEnv("MINIO_USE_SSL"); ok && strings.TrimSpace(val) != "" {
+		switch strings.ToLower(strings.TrimSpace(val)) {
+		case "true", "1", "yes":
+			minioUseSSL = true
+		case "false", "0", "no":
+			minioUseSSL = false
+		default:
+			missing = append(missing, "MINIO_USE_SSL")
+		}
+	}
+
+	s3Configured := s3Region != "" && s3Bucket != "" && s3AccessKeyID != "" && s3SecretAccessKey != ""
+	minioConfigured := minioEndpoint != "" && minioAccessKey != "" && minioSecretKey != "" && minioBucket != ""
+
+	if s3Configured {
 		// Keep legacy field names populated so existing services keep working.
 		minioEndpoint = s3Endpoint
 		minioAccessKey = s3AccessKeyID
 		minioSecretKey = s3SecretAccessKey
 		minioBucket = s3Bucket
 		minioUseSSL = s3UseSSL
-	} else {
-		minioEndpoint = mustString("MINIO_ENDPOINT", &missing)
-		minioAccessKey = mustString("MINIO_ACCESS_KEY", &missing)
-		minioSecretKey = mustString("MINIO_SECRET_KEY", &missing)
-		minioBucket = mustString("MINIO_BUCKET", &missing)
-		minioUseSSL = mustBool("MINIO_USE_SSL", &missing)
+	} else if !minioConfigured {
+		missing = append(missing,
+			"S3_REGION|MINIO_ENDPOINT",
+			"S3_BUCKET|MINIO_BUCKET",
+			"S3_ACCESS_KEY_ID|MINIO_ACCESS_KEY",
+			"S3_SECRET_ACCESS_KEY|MINIO_SECRET_KEY",
+		)
 	}
 
 	if len(missing) > 0 {
@@ -119,34 +146,34 @@ func LoadSettings() (Settings, error) {
 	}
 
 	return Settings{
-		AppEnv:             appEnv,
-		IsProduction:       isProduction,
-		DatabaseURL:        dbURL,
-		RedisURL:           redisURL,
-		PGMaxConns:         pgMaxConns,
-		PGMinConns:         pgMinConns,
-		PGMaxConnIdleTime:  pgMaxIdle,
+		AppEnv:              appEnv,
+		IsProduction:        isProduction,
+		DatabaseURL:         dbURL,
+		RedisURL:            redisURL,
+		PGMaxConns:          pgMaxConns,
+		PGMinConns:          pgMinConns,
+		PGMaxConnIdleTime:   pgMaxIdle,
 		PGHealthcheckPeriod: pgHealth,
-		RedisPoolSize:      redisPool,
-		RedisMinIdleConns:  redisMinIdle,
-		SessionSecret:      sessionSecret,
-		AccessTokenTTL:     accessTTL,
-		RefreshTokenTTL:    refreshTTL,
-		LoginMaxAttempts:   loginMax,
-		LoginLockoutTTL:    loginLock,
-		RateLimitRPS:       rateRPS,
-		RateLimitBurst:     rateBurst,
-		S3Region:           s3Region,
-		S3Bucket:           s3Bucket,
-		S3Endpoint:         s3Endpoint,
-		S3AccessKeyID:      s3AccessKeyID,
-		S3SecretAccessKey:  s3SecretAccessKey,
-		S3UseSSL:           s3UseSSL,
-		MinioEndpoint:      minioEndpoint,
-		MinioAccessKey:     minioAccessKey,
-		MinioSecretKey:     minioSecretKey,
-		MinioBucket:        minioBucket,
-		MinioUseSSL:        minioUseSSL,
+		RedisPoolSize:       redisPool,
+		RedisMinIdleConns:   redisMinIdle,
+		SessionSecret:       sessionSecret,
+		AccessTokenTTL:      accessTTL,
+		RefreshTokenTTL:     refreshTTL,
+		LoginMaxAttempts:    loginMax,
+		LoginLockoutTTL:     loginLock,
+		RateLimitRPS:        rateRPS,
+		RateLimitBurst:      rateBurst,
+		S3Region:            s3Region,
+		S3Bucket:            s3Bucket,
+		S3Endpoint:          s3Endpoint,
+		S3AccessKeyID:       s3AccessKeyID,
+		S3SecretAccessKey:   s3SecretAccessKey,
+		S3UseSSL:            s3UseSSL,
+		MinioEndpoint:       minioEndpoint,
+		MinioAccessKey:      minioAccessKey,
+		MinioSecretKey:      minioSecretKey,
+		MinioBucket:         minioBucket,
+		MinioUseSSL:         minioUseSSL,
 	}, nil
 }
 
@@ -234,4 +261,3 @@ func mustBool(key string, missing *[]string) bool {
 		return false
 	}
 }
-
